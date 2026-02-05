@@ -2,33 +2,36 @@ package kvstore
 
 import "sync"
 
-type kvstoreData struct {
-    data map[string]string
-    mu   sync.Mutex
+type KVStoreData struct {
+	Data map[string]string
+	Mu   sync.Mutex
 }
 
-func (kvstore *kvstoreData) set(key string, value string) {
-    kvstore.mu.Lock()
-    defer kvstore.mu.Unlock()
-    
-    kvstore.data[key] = value
+
+func NewKVStore() *KVStoreData {
+	return &KVStoreData{
+		Data: make(map[string]string),
+	}
 }
 
-func (kvstore *kvstoreData) get(key string) (string, bool) {
-    kvstore.mu.Lock()
-    defer kvstore.mu.Unlock()
-    
-    val, ok := kvstore.data[key]
-    return val, ok
+func (kv *KVStoreData) Set(key string, value string) {
+	kv.Mu.Lock()
+	defer kv.Mu.Unlock()
+	kv.Data[key] = value
+    return
 }
 
-func (kvstore *kvstoreData) remove(key string) bool {
-    kvstore.mu.Lock()
-    defer kvstore.mu.Unlock()
-    
-    if _, ok := kvstore.data[key]; ok {
-        delete(kvstore.data, key)
-        return true
-    }
-    return false
+func (kv *KVStoreData) Get(key string) (string, bool) {
+	kv.Mu.Lock()
+	defer kv.Mu.Unlock()
+	val, ok := kv.Data[key]
+	return val, ok
 }
+
+func (kv *KVStoreData) Remove(key string) {
+	kv.Mu.Lock()
+    defer kv.Mu.Unlock()
+    delete(kv.Data, key)
+    return
+}
+
