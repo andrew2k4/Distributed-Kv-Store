@@ -56,3 +56,14 @@ func (kv *KVStoreData) Remove(key string) error {
 	delete(kv.Data, key)
 	return nil
 }
+
+func (kv *KVStoreData) GetAllData() map[string]string {
+	kv.Mu.RLock()
+	defer kv.Mu.RUnlock()
+
+	copy := make(map[string]string, len(kv.Data))
+	for k, v := range kv.Data {
+		copy[k] = v
+	}
+	return copy
+}
