@@ -1,37 +1,58 @@
 package kvstore
 
-import "sync"
+import (
+	"distributed_kv_store/internal/persistence"
+	"log"
+	"sync"
+)
 
 type KVStoreData struct {
-	Data map[string]string
-	Mu   sync.Mutex
+	Data         map[string]string
+	Mu           sync.RWMutex
+	wal          *persistence.WAL
+	RecoveryMode bool
 }
 
-
-func NewKVStore() *KVStoreData {
+func NewKVStore(wal *persistence.WAL) *KVStoreData {
 	return &KVStoreData{
 		Data: make(map[string]string),
+		wal:  wal,
 	}
 }
 
-func (kv *KVStoreData) Set(key string, value string) {
+func (kv *KVStoreData) Set(key, value string) error {
+	// Write to WAL only if not in recovery mode
+	if !kv.RecoveryMode {
+		if err := kv.wal.Set(key, value); err != nil {
+			log.Printf("Failed to write SET to WAL: %v", err)
+			return err
+		}
+	}
+
 	kv.Mu.Lock()
 	defer kv.Mu.Unlock()
 	kv.Data[key] = value
-    return
+	return nil
 }
 
 func (kv *KVStoreData) Get(key string) (string, bool) {
-	kv.Mu.Lock()
-	defer kv.Mu.Unlock()
+	kv.Mu.RLock()
+	defer kv.Mu.RUnlock()
 	val, ok := kv.Data[key]
 	return val, ok
 }
 
-func (kv *KVStoreData) Remove(key string) {
-	kv.Mu.Lock()
-    defer kv.Mu.Unlock()
-    delete(kv.Data, key)
-    return
-}
+func (kv *KVStoreData) Remove(key string) error {
+	// Delete from WAL only if not in recovery mode
+	if !kv.RecoveryMode {
+		if err := kv.wal.Delete(key); err != nil {
+			log.Printf("Failed to write DEL to WAL: %v", err)
+			return err
+		}
+	}
 
+	kv.Mu.Lock()
+	defer kv.Mu.Unlock()
+	delete(kv.Data, key)
+	return nil
+}
