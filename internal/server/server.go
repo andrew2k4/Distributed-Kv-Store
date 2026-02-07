@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"distributed_kv_store/internal/kvstore" // Import correct
+	"distributed_kv_store/internal/kvstore"
 )
 
 type KVStoreService struct {
@@ -12,7 +12,6 @@ type KVStoreService struct {
 
 func (s *KVStoreService) GetHandler(ctx context.Context, req *GetRequest) (*GetResponse, error) {
     val, ok  := s.Store.Get(req.Key)
-
     return &GetResponse{
         Found: ok,
         Value: val,
