@@ -4,17 +4,21 @@ import (
 	"distributed_kv_store/internal/kvstore"
 	"distributed_kv_store/internal/persistence"
 	"distributed_kv_store/internal/server"
+	"encoding/json"
+	"io"
 	"log"
 	"net"
+	"os"
 
 	"google.golang.org/grpc"
 )
 
 func main() {
-	path := "wal.log"
+	walPath := "wal.log"
+	snapshotPath := "snapshot.json"
 
 	// Initialize WAL
-	walEngine, err := persistence.NewWAL(path)
+	walEngine, err := persistence.NewWAL(walPath)
 	if err != nil {
 		log.Fatalf("Failed to start WAL: %v", err)
 	}
@@ -24,6 +28,23 @@ func main() {
 
 	// Enable recovery mode to avoid rewriting WAL during recovery
 	kvStoreEngine.RecoveryMode = true
+
+	// Load snapshot if it exists
+	snapshotFile, err := os.OpenFile(snapshotPath, os.O_CREATE|os.O_RDONLY, 0644)
+	if err != nil {
+		log.Fatalf("Failed to open snapshot file: %v", err)
+	}
+	defer snapshotFile.Close()
+
+	var data map[string]string
+	if err := json.NewDecoder(snapshotFile).Decode(&data); err != nil && err != io.EOF {
+		log.Fatalf("Failed to decode snapshot data: %v", err)
+	}
+	for key, value := range data {
+		kvStoreEngine.Set(key, value)
+	}
+
+	
 	err = walEngine.Recovery(func(operation, key, value string) {
 			switch operation {
 			case "SET":
@@ -47,12 +68,19 @@ func main() {
 		log.Fatalf("Failed to start the server: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
 
+	grpcServer := grpc.NewServer()
+	// Initialize Snapshot Manager
+	snapManager := &server.SnapshotManager{}
+	// Create Counter for operations
+	counter := &server.OperationCounter{}	
 	kvstoreService := &server.KVStoreService{
 		Store: kvStoreEngine,
+		Wal: walEngine,
+		SnapManager: snapManager,
+		Counter: counter,
 	}
-
+ 
 	server.RegisterKvStoreServer(grpcServer, kvstoreService)
 
 	log.Println("gRPC server started on port 50051")
