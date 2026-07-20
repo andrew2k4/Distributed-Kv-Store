@@ -11,6 +11,8 @@ import (
 type WAL struct {
 	file *os.File
 	mu   sync.Mutex
+	writeCount int
+	syncCount int
 }
 
 func NewWAL(path string) (*WAL, error) {
@@ -21,6 +23,7 @@ func NewWAL(path string) (*WAL, error) {
 
 	return &WAL{
 		file: file,
+		syncCount: 100,
 	}, nil
 }
 
@@ -33,9 +36,7 @@ func (w *WAL) Delete(key string) error {
 }
 
 func (w *WAL) write(op, key, value string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
+	
 	// save data in wal.log as SET key value or DEL key value
 	var line string
 	if op == "SET" {
@@ -44,11 +45,19 @@ func (w *WAL) write(op, key, value string) error {
 		line = fmt.Sprintf("DEL %s\n", key)
 	}
 
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if _, err := w.file.WriteString(line); err != nil {
 		return err
 	}
+	w.writeCount ++
+	if(w.writeCount >= w.syncCount){
+		w.writeCount = 0
+		return w.file.Sync()
+	}
+	
 
-	return w.file.Sync()
+	return nil
 }
 
 func (w *WAL) Recovery(apply func(op, key, value string)) error {
@@ -64,4 +73,23 @@ func (w *WAL) Recovery(apply func(op, key, value string)) error {
 	}
 
 	return scanner.Err()
+}
+
+func (w *WAL) Truncate() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if err := w.file.Close(); err != nil{
+		return fmt.Errorf("close wal: %w", err)
+	}
+
+	path := w.file.Name()
+	file, err := os.OpenFile(path,os.O_APPEND|os.O_WRONLY|os.O_TRUNC ,0644)
+
+	if(err != nil){
+		return fmt.Errorf("truncate wal: %w", err)
+	}
+
+	w.file = file
+	return nil
 }

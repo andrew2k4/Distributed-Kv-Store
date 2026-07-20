@@ -15,7 +15,7 @@ type KVStoreData struct {
 
 func NewKVStore(wal *persistence.WAL) *KVStoreData {
 	return &KVStoreData{
-		Data: make(map[string]string),
+		Data: make(map[string]string, 1000),
 		wal:  wal,
 	}
 }
