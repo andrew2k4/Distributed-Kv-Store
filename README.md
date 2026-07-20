@@ -1,4 +1,4 @@
-# Distributed Key-Value Store (Go)
+# Distributed Key-Value Store
 
 A persistent key-value store built in Go, featuring write-ahead logging,
 snapshotting, and crash recovery. Raft-based replication in progress.
