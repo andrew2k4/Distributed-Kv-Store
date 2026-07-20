@@ -2,7 +2,10 @@ package kvstore
 
 import (
 	"distributed_kv_store/internal/persistence"
+	"encoding/json"
+	"fmt"
 	"log"
+	"os"
 	"sync"
 )
 
@@ -21,7 +24,9 @@ func NewKVStore(wal *persistence.WAL) *KVStoreData {
 }
 
 func (kv *KVStoreData) Set(key, value string) error {
-	// Write to WAL only if not in recovery mode
+	kv.Mu.Lock()
+	defer kv.Mu.Unlock()
+
 	if !kv.RecoveryMode {
 		if err := kv.wal.Set(key, value); err != nil {
 			log.Printf("Failed to write SET to WAL: %v", err)
@@ -29,8 +34,6 @@ func (kv *KVStoreData) Set(key, value string) error {
 		}
 	}
 
-	kv.Mu.Lock()
-	defer kv.Mu.Unlock()
 	kv.Data[key] = value
 	return nil
 }
@@ -43,7 +46,9 @@ func (kv *KVStoreData) Get(key string) (string, bool) {
 }
 
 func (kv *KVStoreData) Remove(key string) error {
-	// Delete from WAL only if not in recovery mode
+	kv.Mu.Lock()
+	defer kv.Mu.Unlock()
+
 	if !kv.RecoveryMode {
 		if err := kv.wal.Delete(key); err != nil {
 			log.Printf("Failed to write DEL to WAL: %v", err)
@@ -51,19 +56,30 @@ func (kv *KVStoreData) Remove(key string) error {
 		}
 	}
 
-	kv.Mu.Lock()
-	defer kv.Mu.Unlock()
 	delete(kv.Data, key)
 	return nil
 }
 
-func (kv *KVStoreData) GetAllData() map[string]string {
-	kv.Mu.RLock()
-	defer kv.Mu.RUnlock()
-
-	copy := make(map[string]string, len(kv.Data))
+func (kv *KVStoreData) Snapshot(path string) error {
+	kv.Mu.Lock()
+	data := make(map[string]string, len(kv.Data))
 	for k, v := range kv.Data {
-		copy[k] = v
+		data[k] = v
 	}
-	return copy
+	offset := kv.wal.Offset()
+	kv.Mu.Unlock()
+
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed to create snapshot file: %w", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		return fmt.Errorf("failed to encode snapshot data: %w", err)
+	}
+
+	return kv.wal.TruncateTo(offset)
 }

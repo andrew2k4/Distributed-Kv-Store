@@ -76,7 +76,6 @@ func main() {
 	counter := &server.OperationCounter{}	
 	kvstoreService := &server.KVStoreService{
 		Store: kvStoreEngine,
-		Wal: walEngine,
 		SnapManager: snapManager,
 		Counter: counter,
 	}

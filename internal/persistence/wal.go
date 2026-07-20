@@ -2,17 +2,24 @@ package persistence
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
-	"strings"
 	"sync"
 )
 
+const (
+	opSet byte = 0
+	opDel byte = 1
+)
+
 type WAL struct {
-	file *os.File
-	mu   sync.Mutex
+	file       *os.File
+	mu         sync.Mutex
 	writeCount int
-	syncCount int
+	syncCount  int
+	offset     int64
 }
 
 func NewWAL(path string) (*WAL, error) {
@@ -21,75 +28,133 @@ func NewWAL(path string) (*WAL, error) {
 		return nil, err
 	}
 
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
 	return &WAL{
-		file: file,
+		file:      file,
 		syncCount: 100,
+		offset:    info.Size(),
 	}, nil
 }
 
 func (w *WAL) Set(key, value string) error {
-	return w.write("SET", key, value)
+	return w.write(opSet, key, value)
 }
 
 func (w *WAL) Delete(key string) error {
-	return w.write("DEL", key, "")
+	return w.write(opDel, key, "")
 }
 
-func (w *WAL) write(op, key, value string) error {
-	
-	// save data in wal.log as SET key value or DEL key value
-	var line string
-	if op == "SET" {
-		line = fmt.Sprintf("SET %s %s\n", key, value)
-	} else {
-		line = fmt.Sprintf("DEL %s\n", key)
-	}
+func (w *WAL) write(op byte, key, value string) error {
+	record := make([]byte, 0, 9+len(key)+len(value))
+	record = append(record, op)
+
+	var lenBuf [4]byte
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(key)))
+	record = append(record, lenBuf[:]...)
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(value)))
+	record = append(record, lenBuf[:]...)
+
+	record = append(record, key...)
+	record = append(record, value...)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if _, err := w.file.WriteString(line); err != nil {
+
+	n, err := w.file.Write(record)
+	if err != nil {
 		return err
 	}
-	w.writeCount ++
-	if(w.writeCount >= w.syncCount){
+	w.offset += int64(n)
+
+	w.writeCount++
+	if w.writeCount >= w.syncCount {
 		w.writeCount = 0
 		return w.file.Sync()
 	}
-	
 
 	return nil
 }
 
 func (w *WAL) Recovery(apply func(op, key, value string)) error {
-	scanner := bufio.NewScanner(w.file)
+	reader := bufio.NewReader(w.file)
 
-	for scanner.Scan() {
-		parts := strings.SplitN(scanner.Text(), " ", 3)
-		if parts[0] == "SET" && len(parts) == 3 {
-			apply("SET", parts[1], parts[2])
-		} else if parts[0] == "DEL" && len(parts) >= 2 {
-			apply("DEL", parts[1], "")
+	for {
+		header := make([]byte, 9)
+		if _, err := io.ReadFull(reader, header); err != nil {
+			break
+		}
+
+		keyLen := binary.BigEndian.Uint32(header[1:5])
+		valueLen := binary.BigEndian.Uint32(header[5:9])
+
+		key := make([]byte, keyLen)
+		if _, err := io.ReadFull(reader, key); err != nil {
+			break
+		}
+		value := make([]byte, valueLen)
+		if _, err := io.ReadFull(reader, value); err != nil {
+			break
+		}
+
+		switch header[0] {
+		case opSet:
+			apply("SET", string(key), string(value))
+		case opDel:
+			apply("DEL", string(key), "")
 		}
 	}
 
-	return scanner.Err()
+	return nil
 }
 
-func (w *WAL) Truncate() error {
+func (w *WAL) Offset() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.offset
+}
+
+func (w *WAL) TruncateTo(uptoOffset int64) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if err := w.file.Close(); err != nil{
+	path := w.file.Name()
+
+	if err := w.file.Close(); err != nil {
 		return fmt.Errorf("close wal: %w", err)
 	}
 
-	path := w.file.Name()
-	file, err := os.OpenFile(path,os.O_APPEND|os.O_WRONLY|os.O_TRUNC ,0644)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read wal: %w", err)
+	}
 
-	if(err != nil){
+	if uptoOffset > int64(len(data)) {
+		uptoOffset = int64(len(data))
+	}
+	remaining := data[uptoOffset:]
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
 		return fmt.Errorf("truncate wal: %w", err)
+	}
+	if _, err := file.Write(remaining); err != nil {
+		file.Close()
+		return fmt.Errorf("write remaining wal: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close wal: %w", err)
+	}
+
+	file, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("reopen wal: %w", err)
 	}
 
 	w.file = file
+	w.offset = int64(len(remaining))
 	return nil
 }

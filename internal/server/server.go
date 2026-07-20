@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"distributed_kv_store/internal/kvstore"
-	"distributed_kv_store/internal/persistence"
 	"log"
 	"sync"
 )
@@ -11,7 +10,6 @@ import (
 type KVStoreService struct {
     UnimplementedKvStoreServer
     Store *kvstore.KVStoreData
-    Wal *persistence.WAL
     Counter *OperationCounter
     SnapManager *SnapshotManager
 }
@@ -41,7 +39,7 @@ func (s *KVStoreService) SetHandler(ctx context.Context, req *SetRequest) (*SetR
     // Increment the counter for set operations
     go func() {
         if IncrementCounter(s.Counter) {
-            s.SnapManager.TriggerSnapshot(s.Store, s.Wal)
+            s.SnapManager.TriggerSnapshot(s.Store)
         }
     }()
     
@@ -56,7 +54,7 @@ func (s *KVStoreService) DeleteHandler(ctx context.Context, req *DeleteRequest) 
     // Increment the counter for delete operations
     go func() {
         if IncrementCounter(s.Counter) {
-            s.SnapManager.TriggerSnapshot(s.Store, s.Wal)
+            s.SnapManager.TriggerSnapshot(s.Store)
         }
     }()
     
@@ -78,7 +76,7 @@ func IncrementCounter(counter *OperationCounter) bool {
 }
 
 
-func (s *SnapshotManager) TriggerSnapshot(store *kvstore.KVStoreData, wal *persistence.WAL) {
+func (s *SnapshotManager) TriggerSnapshot(store *kvstore.KVStoreData) {
     s.mu.Lock()
     if s.snapshotInProgress {
         s.mu.Unlock()
@@ -88,7 +86,7 @@ func (s *SnapshotManager) TriggerSnapshot(store *kvstore.KVStoreData, wal *persi
     s.mu.Unlock()
 
     go func() {
-        if err := persistence.SaveSnapshot("snapshot.json", store, wal); err != nil {
+        if err := store.Snapshot("snapshot.json"); err != nil {
             log.Printf("Failed to save snapshot: %v", err)
         } else {
             log.Println("Snapshot saved successfully")
