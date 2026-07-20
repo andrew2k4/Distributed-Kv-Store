@@ -57,7 +57,7 @@ func (w *WAL) write(op, key, value string) error {
 	}
 	
 
-	return w.file.Sync()
+	return nil
 }
 
 func (w *WAL) Recovery(apply func(op, key, value string)) error {
