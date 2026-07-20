@@ -28,17 +28,20 @@ Client --gRPC (Set/Get/Delete)--> KVStoreService --> KVStoreData (map + lock)
 
 ## Benchmarks (single-node, Intel i5-1145G7 @ 2.60GHz, 4C/8T, 16GB RAM)
 
-| Mode  | Concurrency | P50    | P99    | Throughput   |
-|-------|-------------|--------|--------|--------------|
-| Write | 1           | 553µs  | 12.6ms | 1,337 ops/s  |
-| Write | 10          | 800µs  | 6.2ms  | 7,637 ops/s  |
-| Write | 50          | -      | -      | 10,290 ops/s |
-| Write | 100         | -      | -      | 9,991 ops/s  |
-| Write | 200         | -      | -      | 10,495 ops/s |
+| Mode  | Concurrency | P50     | P99      | Throughput   |
+|-------|-------------|---------|----------|--------------|
+| Write | 1           | 553µs   | 12.6ms   | 1,337 ops/s  |
+| Write | 10          | 800µs   | 6.2ms    | 7,637 ops/s  |
+| Write | 50          | 4.76ms  | 75.3ms   | 10,290 ops/s |
+| Write | 100         | 10.6ms  | 101.4ms  | 9,991 ops/s  |
+| Write | 200         | 25.3ms  | 174.7ms  | 10,495 ops/s |
 
 Throughput tops out around 10k ops/s once you hit ~50 concurrent
-clients, more concurrency doesn't help after that. Read benchmarking
-isn't wired up in `bench/` yet, only writes are measured for now.
+clients, more concurrency doesn't help after that, it just queues
+requests and drives latency up (P50 goes from under 1ms at low
+concurrency to 25ms at 200 clients for basically the same ops/s). Read
+benchmarking isn't wired up in `bench/` yet, only writes are measured
+for now.
 
 P99 used to be around 8 seconds under load before batching the WAL
 fsync every 100 writes instead of on every single write (same tradeoff
