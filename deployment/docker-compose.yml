@@ -1,0 +1,12 @@
+services:
+  kvstore:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+    volumes:
+      - kvstore-data:/data
+
+volumes:
+  kvstore-data:
