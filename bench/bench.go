@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "distributed_kv_store/internal/server"
+	pb "distributed_kv_store/internal/pb"
 
 	"google.golang.org/grpc"
 )

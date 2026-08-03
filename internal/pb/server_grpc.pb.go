@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v6.33.5
-// source: internal/server/server.proto
+// source: internal/pb/server.proto
 
-package server
+package pb
 
 import (
 	context "context"
@@ -22,6 +22,8 @@ const (
 	KvStore_SetHandler_FullMethodName    = "/server.KvStore/SetHandler"
 	KvStore_GetHandler_FullMethodName    = "/server.KvStore/GetHandler"
 	KvStore_DeleteHandler_FullMethodName = "/server.KvStore/DeleteHandler"
+	KvStore_AppendEntries_FullMethodName = "/server.KvStore/AppendEntries"
+	KvStore_RequestVote_FullMethodName   = "/server.KvStore/RequestVote"
 )
 
 // KvStoreClient is the client API for KvStore service.
@@ -31,6 +33,8 @@ type KvStoreClient interface {
 	SetHandler(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error)
 	GetHandler(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	DeleteHandler(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
+	AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error)
+	RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error)
 }
 
 type kvStoreClient struct {
@@ -71,6 +75,26 @@ func (c *kvStoreClient) DeleteHandler(ctx context.Context, in *DeleteRequest, op
 	return out, nil
 }
 
+func (c *kvStoreClient) AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AppendEntriesResponse)
+	err := c.cc.Invoke(ctx, KvStore_AppendEntries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *kvStoreClient) RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestVoteResponse)
+	err := c.cc.Invoke(ctx, KvStore_RequestVote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KvStoreServer is the server API for KvStore service.
 // All implementations must embed UnimplementedKvStoreServer
 // for forward compatibility.
@@ -78,6 +102,8 @@ type KvStoreServer interface {
 	SetHandler(context.Context, *SetRequest) (*SetResponse, error)
 	GetHandler(context.Context, *GetRequest) (*GetResponse, error)
 	DeleteHandler(context.Context, *DeleteRequest) (*DeleteResponse, error)
+	AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error)
+	RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error)
 	mustEmbedUnimplementedKvStoreServer()
 }
 
@@ -96,6 +122,12 @@ func (UnimplementedKvStoreServer) GetHandler(context.Context, *GetRequest) (*Get
 }
 func (UnimplementedKvStoreServer) DeleteHandler(context.Context, *DeleteRequest) (*DeleteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteHandler not implemented")
+}
+func (UnimplementedKvStoreServer) AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AppendEntries not implemented")
+}
+func (UnimplementedKvStoreServer) RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestVote not implemented")
 }
 func (UnimplementedKvStoreServer) mustEmbedUnimplementedKvStoreServer() {}
 func (UnimplementedKvStoreServer) testEmbeddedByValue()                 {}
@@ -172,6 +204,42 @@ func _KvStore_DeleteHandler_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KvStore_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendEntriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KvStoreServer).AppendEntries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KvStore_AppendEntries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KvStoreServer).AppendEntries(ctx, req.(*AppendEntriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KvStore_RequestVote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestVoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KvStoreServer).RequestVote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KvStore_RequestVote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KvStoreServer).RequestVote(ctx, req.(*RequestVoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KvStore_ServiceDesc is the grpc.ServiceDesc for KvStore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -191,7 +259,15 @@ var KvStore_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DeleteHandler",
 			Handler:    _KvStore_DeleteHandler_Handler,
 		},
+		{
+			MethodName: "AppendEntries",
+			Handler:    _KvStore_AppendEntries_Handler,
+		},
+		{
+			MethodName: "RequestVote",
+			Handler:    _KvStore_RequestVote_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "internal/server/server.proto",
+	Metadata: "internal/pb/server.proto",
 }

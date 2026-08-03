@@ -1,15 +1,18 @@
 package server
 
 import (
-	"context"
-	"distributed_kv_store/internal/kvstore"
-	"log"
-	"sync"
+    "context"
+    "distributed_kv_store/internal/kvstore"
+    "distributed_kv_store/internal/pb"
+    "distributed_kv_store/internal/raft"
+    "log"
+    "sync"
 )
 
 type KVStoreService struct {
-    UnimplementedKvStoreServer
+    pb.UnimplementedKvStoreServer
     Store *kvstore.KVStoreData
+    Raft *raft.Raft
     Counter *OperationCounter
     SnapManager *SnapshotManager
 }
@@ -24,16 +27,16 @@ type SnapshotManager struct {
     mu                 sync.Mutex
 }
 
-func (s *KVStoreService) GetHandler(ctx context.Context, req *GetRequest) (*GetResponse, error) {
+func (s *KVStoreService) GetHandler(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
     val, ok  := s.Store.Get(req.Key)
-   
-    return &GetResponse{
+
+    return &pb.GetResponse{
         Found: ok,
         Value: val,
     }, nil
 }
 
-func (s *KVStoreService) SetHandler(ctx context.Context, req *SetRequest) (*SetResponse, error) {
+func (s *KVStoreService) SetHandler(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
     s.Store.Set(req.Key, req.Value)
 
     // Increment the counter for set operations
@@ -42,13 +45,13 @@ func (s *KVStoreService) SetHandler(ctx context.Context, req *SetRequest) (*SetR
             s.SnapManager.TriggerSnapshot(s.Store)
         }
     }()
-    
-    return &SetResponse{
+
+    return &pb.SetResponse{
         Success: true,
     }, nil
 }
 
-func (s *KVStoreService) DeleteHandler(ctx context.Context, req *DeleteRequest) (*DeleteResponse, error) {
+func (s *KVStoreService) DeleteHandler(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
 
     s.Store.Remove(req.Key)
     // Increment the counter for delete operations
@@ -57,11 +60,18 @@ func (s *KVStoreService) DeleteHandler(ctx context.Context, req *DeleteRequest) 
             s.SnapManager.TriggerSnapshot(s.Store)
         }
     }()
-    
-    return &DeleteResponse{
+
+    return &pb.DeleteResponse{
         Success: true,
     } , nil
 }
+
+
+
+func (s *KVStoreService) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error){
+    return s.Raft.Vote(req)
+}
+
 
 // IncrementCounter increments the operation counter and returns true if it reaches the threshold
 func IncrementCounter(counter *OperationCounter) bool {
