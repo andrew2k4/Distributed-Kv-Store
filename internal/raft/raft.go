@@ -23,7 +23,6 @@ const (
 	Leader
 )
 
-var timer = time.NewTimer(time.Duration(rand.Intn(151) + 150) * time.Millisecond)
 type Raft struct {
 	selfID string
 	statePath string
@@ -35,6 +34,8 @@ type Raft struct {
 	lastApplied int64
 	nextIndex 	[]int64
 	matchIndex 	[]int64
+	timer *time.Timer
+	ticker *time.Ticker
 	counter int64
 	peerClients map[string]pb.KvStoreClient
 	peers []Peer
@@ -51,6 +52,7 @@ func NewRaft(selfID string, peers []Peer) (*Raft, error) {
 	r := &Raft{
 		selfID:      selfID,
 		statePath:   fmt.Sprintf("raft_state_%s.json", selfID),
+		timer: time.NewTimer(time.Duration(rand.Intn(151) + 150) * time.Millisecond),
 		peers:       peers,
 		peerClients: make(map[string]pb.KvStoreClient, len(peers)),
 	}
@@ -136,11 +138,11 @@ func(r *Raft) loadState() error {
 
 func(r *Raft) becomeCandidate () {
 	select{
-	case <- timer.C:
+	case <- r.timer.C:
 		r.mu.Lock()
 		if r.role == Leader {
 			r.mu.Unlock()
-			timer.Reset(time.Duration(rand.Intn(151) + 150) * time.Millisecond)
+			r.timer.Reset(time.Duration(rand.Intn(151) + 150) * time.Millisecond)
 			return
 		}
 		r.role = Role(Candidate)
@@ -179,7 +181,9 @@ func(r *Raft) becomeCandidate () {
 		}
 
 		r.persist()
-		timer.Reset(time.Duration(rand.Intn(151) + 150) * time.Millisecond)
+		r.mu.Lock()
+		r.timer.Reset(time.Duration(rand.Intn(151) + 150) * time.Millisecond)
+		r.mu.Unlock()
 		return
 	default:
 		
@@ -199,7 +203,6 @@ func(r *Raft) requestVote(peer pb.KvStoreClient,requestVoteRequest *pb.RequestVo
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if(resp.Term > r.CurrentTerm){
 		r.role = Follower
 	}
@@ -207,11 +210,33 @@ func(r *Raft) requestVote(peer pb.KvStoreClient,requestVoteRequest *pb.RequestVo
 	if resp.VoteGranted {
 		r.counter ++
 	}
-
+	r.mu.Unlock()
+	r.mu.Lock()
 	if r.role == Candidate && r.counter > int64((1 + len(r.peerClients)) / 2) {
 		r.role = Leader
+		r.ticker = time.NewTicker(50 * time.Millisecond)
+		r.mu.Unlock()
+		go r.appendEntries(nil)
+
+		go func() {
+
+			for range r.ticker.C {
+				go r.appendEntries(nil)
+				r.mu.Lock()
+				if(r.role != Leader){
+					r.ticker.Stop()
+					r.mu.Unlock()
+					break
+		        }
+				r.mu.Unlock()
+			}
+		}()
+		
+
 		log.Printf("[%s] won election for term %d with %d votes, becoming leader", r.selfID, r.CurrentTerm, r.counter)
+		return
 	}
+	r.mu.Unlock()
 }
 
 func (r *Raft) Vote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
@@ -258,7 +283,7 @@ func (r *Raft) Vote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error)
 	}
 
 	if granted {
-		timer.Reset(time.Duration(rand.Intn(151)+150) * time.Millisecond)
+		r.timer.Reset(time.Duration(rand.Intn(151)+150) * time.Millisecond)
 	}
 
 	log.Printf("[%s] vote request from %s (term %d): granted=%v", r.selfID, req.CandidateId, req.Term, granted)
@@ -268,5 +293,65 @@ func (r *Raft) Vote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error)
 		VoteGranted: granted,
 	}, nil
 }
+
+func (r *Raft) appendEntries(req *pb.AppendEntriesRequest) {
+	
+	for _, value := range r.peerClients {
+		
+		ctx, cancel := context.WithTimeout(context.Background(), 3 * time.Second)
+		defer cancel()
+		if req != nil {
+			// todo after
+		}else{
+			r.mu.Lock()
+			req := &pb.AppendEntriesRequest{
+				Term: r.CurrentTerm,
+				LeaderId: r.selfID,
+				PrevLogIndex: 0,
+				PrevLogTerm: 0,
+				Entries: []*pb.LogEntry{},
+				LeaderCommit: r.commitIndex,
+			}
+			r.mu.Unlock()
+			_ , err := value.AppendEntries(ctx, req)
+			if err != nil {
+				log.Printf("[%s] error appending entries to %s: %v", r.selfID, value, err)
+			}
+		}
+
+	}
+}
+
+
+func (r *Raft) Append(req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if(req.Term < r.CurrentTerm){
+		return &pb.AppendEntriesResponse{
+			Term: r.CurrentTerm,
+			Success: false,
+			ConflictIndex: 0,
+			ConflictTerm: 0,
+		}, nil
+	}
+
+	r.role = Follower
+	r.timer.Reset(time.Duration(rand.Intn(151) + 150) * time.Millisecond)
+	
+	if(req.Term > r.CurrentTerm){
+		r.CurrentTerm = req.Term
+		r.persistLocked()
+	}
+
+	return &pb.AppendEntriesResponse{
+		Term: r.CurrentTerm,
+		Success: true,
+		ConflictIndex: 0,
+		ConflictTerm: 0,
+	}, nil
+	
+}
+
 
 

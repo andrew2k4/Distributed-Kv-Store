@@ -1,12 +1,12 @@
 package server
 
 import (
-    "context"
-    "distributed_kv_store/internal/kvstore"
-    "distributed_kv_store/internal/pb"
-    "distributed_kv_store/internal/raft"
-    "log"
-    "sync"
+	"context"
+	"distributed_kv_store/internal/kvstore"
+	"distributed_kv_store/internal/pb"
+	"distributed_kv_store/internal/raft"
+	"log"
+	"sync"
 )
 
 type KVStoreService struct {
@@ -70,6 +70,10 @@ func (s *KVStoreService) DeleteHandler(ctx context.Context, req *pb.DeleteReques
 
 func (s *KVStoreService) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error){
     return s.Raft.Vote(req)
+}
+
+func (s *KVStoreService) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error){
+    return s.Raft.Append(req)
 }
 
 
